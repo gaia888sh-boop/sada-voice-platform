@@ -1,0 +1,6 @@
+{
+  "name": "صدى - النسخ الصوتي الذكي",
+  "description": "تطبيق صدى الاحترافي لتفريغ الصوت بدقة عالية بالذكاء الاصطناعي، فصل المتحدثين، تلخيص الاجتماعات، والخرائط الذهنية وبطاقات الاستذكار ووضع الصم وضعاف السمع.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
