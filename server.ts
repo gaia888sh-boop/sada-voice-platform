@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import { execSync } from "child_process";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
@@ -110,6 +111,147 @@ app.get("/api/download-zip", (_req, res) => {
     res.sendFile(zipPath);
   } else {
     res.status(404).json({ error: "ملف المشروع غير موجود حالياً" });
+  }
+});
+
+// GitHub Direct Publisher Endpoint
+app.post("/api/github/publish", async (req, res) => {
+  const { token, repoName, description, isPrivate } = req.body;
+
+  if (!token || typeof token !== "string" || !token.trim()) {
+    res.status(400).json({ error: "يرجى تزويد رمز وصول GitHub (Personal Access Token)." });
+    return;
+  }
+
+  const cleanToken = token.trim();
+  const rawRepoName = (repoName || "sada-voice-platform").trim().replace(/[^a-zA-Z0-9._-]/g, "-");
+
+  try {
+    // 1. Authenticate with GitHub & get user details
+    const userRes = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${cleanToken}`,
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "Sada-Platform-Publisher",
+      },
+    });
+
+    if (!userRes.ok) {
+      const errInfo = await userRes.json().catch(() => ({}));
+      const reason = errInfo.message || (userRes.status === 401 ? "رمز غير صالح أو منتهي الصلاحية" : "فشل التحقق");
+      res.status(userRes.status).json({
+        error: `خطأ في مصادقة GitHub (${userRes.status}): ${reason}. تأكد من صلاحية رمز PAT واحتوائه على صلاحية 'repo'.`,
+      });
+      return;
+    }
+
+    const userData = (await userRes.json()) as { login: string; name?: string; html_url: string };
+    const username = userData.login;
+
+    // 2. Check if repo already exists or create it
+    const checkRepoRes = await fetch(`https://api.github.com/repos/${username}/${rawRepoName}`, {
+      headers: {
+        Authorization: `Bearer ${cleanToken}`,
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "Sada-Platform-Publisher",
+      },
+    });
+
+    let targetRepoUrl = `https://github.com/${username}/${rawRepoName}`;
+    let createdNew = false;
+
+    if (checkRepoRes.ok) {
+      const existingRepo = await checkRepoRes.json();
+      targetRepoUrl = existingRepo.html_url || targetRepoUrl;
+    } else if (checkRepoRes.status === 404) {
+      // Create new repo
+      const createRes = await fetch("https://api.github.com/user/repos", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${cleanToken}`,
+          Accept: "application/vnd.github.v3+json",
+          "Content-Type": "application/json",
+          "User-Agent": "Sada-Platform-Publisher",
+        },
+        body: JSON.stringify({
+          name: rawRepoName,
+          description: description || "Sada (صدى) - منصة النسخ الصوتي الذكي وتفريغ الاجتماعات ودعم الصم وضعاف السمع",
+          private: !!isPrivate,
+          auto_init: false,
+        }),
+      });
+
+      if (!createRes.ok) {
+        const createErr = await createRes.json().catch(() => ({}));
+        res.status(createRes.status).json({
+          error: `تعذر إنشاء المستودع في GitHub: ${createErr.message || "خطأ غير معروف"}`,
+        });
+        return;
+      }
+
+      const createdData = await createRes.json();
+      targetRepoUrl = createdData.html_url || targetRepoUrl;
+      createdNew = true;
+    } else {
+      const checkErr = await checkRepoRes.json().catch(() => ({}));
+      res.status(checkRepoRes.status).json({
+        error: `تعذر الوصول للمستودع: ${checkErr.message || "خطأ في الصلاحيات"}`,
+      });
+      return;
+    }
+
+    // 3. Prepare git working tree and commit
+    try {
+      execSync("git status", { stdio: "ignore" });
+    } catch {
+      execSync('git init && git config user.name "Sada Publisher" && git config user.email "bot@sada.app"', {
+        stdio: "ignore",
+      });
+    }
+
+    execSync("git branch -M main", { stdio: "ignore" });
+    execSync("git add -A", { stdio: "ignore" });
+
+    try {
+      execSync('git commit -m "feat: Sada Voice Platform source code release" --allow-empty', {
+        stdio: "ignore",
+      });
+    } catch {
+      // Commit might already exist with no changes
+    }
+
+    // 4. Configure remote with token safely and push
+    const authenticatedRemote = `https://${encodeURIComponent(cleanToken)}@github.com/${username}/${rawRepoName}.git`;
+
+    try {
+      try {
+        execSync("git remote remove origin", { stdio: "ignore" });
+      } catch {}
+
+      execSync(`git remote add origin ${authenticatedRemote}`, { stdio: "ignore" });
+      execSync("git push -u origin main --force", { stdio: "pipe", encoding: "utf-8" });
+    } finally {
+      // Always remove remote origin to prevent storing credentials on disk
+      try {
+        execSync("git remote remove origin", { stdio: "ignore" });
+      } catch {}
+    }
+
+    res.json({
+      success: true,
+      repoUrl: targetRepoUrl,
+      repoName: rawRepoName,
+      owner: username,
+      isPrivate: !!isPrivate,
+      createdNew,
+      cloneUrl: `https://github.com/${username}/${rawRepoName}.git`,
+      message: `تم رفع ونشر المشروع بنجاح إلى GitHub في حساب @${username}! 🚀`,
+    });
+  } catch (error: any) {
+    console.error("[GitHub Publish Error]:", error);
+    res.status(500).json({
+      error: `حدث خطأ أثناء الاتصال أو رفع الملفات: ${error.message || "خطأ غير متوقع"}`,
+    });
   }
 });
 

@@ -8,6 +8,7 @@ import { LibraryScreen } from "./components/LibraryScreen";
 import { EditorScreen } from "./components/EditorScreen";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { DeafAccessibilityModal } from "./components/DeafAccessibilityModal";
+import { GitHubPublishModal } from "./components/GitHubPublishModal";
 
 export default function App() {
   // Recordings State with localStorage persistence
@@ -42,6 +43,9 @@ export default function App() {
 
   // Deaf Accessibility Overlay Modal
   const [isDeafModalOpen, setIsDeafModalOpen] = useState(false);
+
+  // GitHub Repository Publisher Overlay Modal
+  const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
 
   // Persist recordings on update
   useEffect(() => {
@@ -115,6 +119,7 @@ export default function App() {
           setActiveTab("record");
         }}
         onOpenDeafMode={() => setIsDeafModalOpen(true)}
+        onOpenGitHubModal={() => setIsGitHubModalOpen(true)}
         recordingsCount={recordings.length}
       />
 
@@ -170,6 +175,7 @@ export default function App() {
             onUpdateSettings={(newSettings) => setSettings(newSettings)}
             onResetData={handleResetData}
             recordingsCount={recordings.length}
+            onOpenGitHubModal={() => setIsGitHubModalOpen(true)}
           />
         )}
       </main>
@@ -193,6 +199,12 @@ export default function App() {
         isOpen={isDeafModalOpen}
         onClose={() => setIsDeafModalOpen(false)}
         dialect={settings.dialect}
+      />
+
+      {/* GitHub Repository Publisher Modal */}
+      <GitHubPublishModal
+        isOpen={isGitHubModalOpen}
+        onClose={() => setIsGitHubModalOpen(false)}
       />
     </div>
   );
